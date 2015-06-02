@@ -1,0 +1,38 @@
+<package>
+    <name>dem_costmap_2d</name>
+    <version>1.0.0</version>
+    <description>Digital Elevation Map Layer for the costmap_2d module</description>
+    <author>Sebastian Pütz</author>
+    <maintainer email="spuetz@uos.de">Sebastian Pütz</maintainer>
+    <license>BSD</license>
+
+    <buildtool_depend>catkin</buildtool_depend>
+
+    <build_depend>roscpp</build_depend>
+    <build_depend>pcl_ros</build_depend>
+    <build_depend>pcl_conversions</build_depend>
+    <build_depend>nav_msgs</build_depend>
+    <build_depend>std_msgs</build_depend>
+    <build_depend>octomap_msgs</build_depend>
+    <build_depend>octomap_ros</build_depend>
+    <build_depend>std_srvs</build_depend>
+    <build_depend>costmap_2d</build_depend>
+    <build_depend>dynamic_reconfigure</build_depend>
+    <build_depend>pluginlib</build_depend>
+
+    <run_depend>roscpp</run_depend>
+    <run_depend>pcl_ros</run_depend>
+    <run_depend>pcl_conversions</run_depend>
+    <run_depend>nav_msgs</run_depend>
+    <run_depend>std_msgs</run_depend>
+    <run_depend>octomap_msgs</run_depend>
+    <run_depend>octomap_ros</run_depend>
+    <run_depend>costmap_2d</run_depend>
+    <run_depend>std_srvs</run_depend>
+    <run_depend>dynamic_reconfigure</run_depend>
+    <run_depend>pluginlib</run_depend>
+
+    <export>
+      <costmap_2d plugin="${prefix}/dem_costmap_2d_plugin.xml"/>
+    </export>
+</package>

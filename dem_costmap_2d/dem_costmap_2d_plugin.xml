@@ -1,0 +1,5 @@
+<library path="lib/libdem_costmap_2d">
+  <class type="dem_costmap_2d::DEMCostmap2D" base_class_type="costmap_2d::Layer">
+    <description>TODO</description>
+  </class>
+</library>
