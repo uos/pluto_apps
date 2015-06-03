@@ -35,9 +35,9 @@ void DEMCostmap2D::octomapCallback(const octomap_msgs::Octomap::ConstPtr& msg){
   octomap::AbstractOcTree* abstract_tree = fullMsgToMap(*msg);
   octomap::OcTree* octree = dynamic_cast<octomap::OcTree*>(abstract_tree);
 
+  Costmap2D::resetMaps();
   resizeMap(octree);
   buildHeightDifferenceMap(octree);
-
 }
 
 void DEMCostmap2D::resizeMap(octomap::OcTree* octree){
@@ -167,6 +167,8 @@ void DEMCostmap2D::updateBounds(
     return;
 
   useExtraBounds(min_x, min_y, max_x, max_y);
+
+  current_ = true;
 
   unsigned int mx;
   unsigned int my;
