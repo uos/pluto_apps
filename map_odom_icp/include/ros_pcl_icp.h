@@ -7,6 +7,7 @@
 #include <tf/transform_broadcaster.h>
 
 #include <pcl/filters/filter.h>
+#include <pcl/filters/voxel_grid.h>
 #include <pcl/registration/registration.h>
 #include <pcl/registration/icp.h>
 #include <pcl/io/pcd_io.h>
@@ -31,7 +32,10 @@ class RosPclIcp{
       geometry_msgs::Transform &delta_transform,
       double correspondence_distance = 0.1,
       double transformation_epsilon = 1e-8,
-      int maximum_iterations = 100);
+      int maximum_iterations = 100,
+      bool downsample_target = false,
+      bool downsample_cloud = false,
+      float downsample_leafsize = 0.02f);
 
   private:
     ros::NodeHandle nh_;
@@ -47,5 +51,9 @@ class RosPclIcp{
     void eigenToTf( const Eigen::Matrix4f &transform_eigen,
                     tf::Transform &transform_tf);
 
+    void downsampleCloud(
+      pcl::PointCloud<pcl::PointXYZ>::Ptr &input,
+      pcl::PointCloud<pcl::PointXYZ>::Ptr &output,
+      float leafSize);
 
 };

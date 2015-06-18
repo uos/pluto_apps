@@ -27,7 +27,10 @@ bool RosPclIcp::registerClouds(
   geometry_msgs::Transform &delta_transform,
   double correspondence_distance,
   double transformation_epsilon,
-  int maximum_iterations
+  int maximum_iterations,
+  bool downsample_target,
+  bool downsample_cloud,
+  float downsample_leafsize
   )
 {
 
@@ -44,6 +47,8 @@ bool RosPclIcp::registerClouds(
 
   // calculate transformation between target_pose and cloud_pose
   tf::Transform guess_transform_tf = target_pose_tf.inverseTimes(cloud_pose_tf);
+  //tf::Transform guess_transform_tf = cloud_pose_tf.inverseTimes(target_pose_tf);
+  
   Eigen::Matrix4f guess_transform;
   tfToEigen(guess_transform_tf, guess_transform);
 
@@ -62,6 +67,20 @@ bool RosPclIcp::registerClouds(
   pcl::removeNaNFromPointCloud(*target_xyz_ptr,*target_xyz_ptr, indices_target);
   pcl::removeNaNFromPointCloud(*cloud_xyz_ptr,*cloud_xyz_ptr, indices_cloud);
 
+  // downsample clouds
+  if(downsample_target){
+    pcl::PointCloud<pcl::PointXYZ>::Ptr target_xyz_downsampled_ptr(
+      new pcl::PointCloud<pcl::PointXYZ>);
+    downsampleCloud(target_xyz_ptr, target_xyz_downsampled_ptr, downsample_leafsize);
+    target_xyz_ptr = target_xyz_downsampled_ptr;
+  }
+  if(downsample_cloud){
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_xyz_downsampled_ptr(
+      new pcl::PointCloud<pcl::PointXYZ>);
+    downsampleCloud(cloud_xyz_ptr, cloud_xyz_downsampled_ptr, downsample_leafsize);
+    cloud_xyz_ptr = cloud_xyz_downsampled_ptr;
+  }
+
   // do icp
   pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ, float> icp;
 
@@ -78,9 +97,6 @@ bool RosPclIcp::registerClouds(
   ROS_INFO("ICP has converged: %s, score: %f", icp.hasConverged()? "true":
   "false", icp.getFitnessScore());
 
-  if(! icp.hasConverged()){
-    return false;
-  }
   //std::cout << icp.getFinalTransformation() << std::endl;
 
   Eigen::Matrix4f final_transform = icp.getFinalTransformation();
@@ -98,8 +114,21 @@ bool RosPclIcp::registerClouds(
   tf::Transform delta_transform_tf = guess_transform_tf.inverseTimes(final_transform_tf);
   tf::transformTFToMsg(delta_transform_tf, delta_transform);
 
-  return true;
+  return icp.hasConverged();
 }
+
+
+void RosPclIcp::downsampleCloud(
+    pcl::PointCloud<pcl::PointXYZ>::Ptr &input,
+    pcl::PointCloud<pcl::PointXYZ>::Ptr &output,
+    float leafSize)
+{
+  pcl::VoxelGrid<pcl::PointXYZ>sor;
+  sor.setInputCloud (input);
+  sor.setLeafSize (leafSize, leafSize, leafSize);
+  sor.filter(*output);
+}
+
 
 void RosPclIcp::eigenToTf(
     const Eigen::Matrix4f &transform_eigen,
