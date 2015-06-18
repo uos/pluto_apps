@@ -23,10 +23,11 @@ void DEMCostmap2D::onInitialize()
   sub = nh_g.subscribe("octomap_full", 10, &DEMCostmap2D::octomapCallback, this);
   ROS_INFO("DEM Costmap 2D Plugin loaded.");
   
-  nh.param("diff_range_x", diff_range_x_, 0.2);
-  nh.param("diff_range_y", diff_range_y_, 0.2);
+  nh.param("diff_range_x", diff_range_x_, 0.1);
+  nh.param("diff_range_y", diff_range_y_, 0.1);
   nh.param("diff_range_z", diff_range_z_, 0.6);
   nh.param("diff_max_z", diff_max_z_, 0.2);
+  nh.param("z_max", z_max_, 2.3);
 }
 
 void DEMCostmap2D::octomapCallback(const octomap_msgs::Octomap::ConstPtr& msg){
@@ -74,6 +75,10 @@ void DEMCostmap2D::buildHeightDifferenceMap(octomap::OcTree* octree){
       double y = it.getY();
       double z = it.getZ();
       
+      if(z > z_max_){
+        continue;
+      }
+
       unsigned int mx, my;
       worldToMap(x, y, mx, my);
 
@@ -91,6 +96,7 @@ void DEMCostmap2D::buildHeightDifferenceMap(octomap::OcTree* octree){
     }
   }
 
+  hdm_mtx.lock();
   // clear the map
   height_diff_map_.clear();
 
@@ -123,6 +129,7 @@ void DEMCostmap2D::buildHeightDifferenceMap(octomap::OcTree* octree){
       }
     }
   }
+  hdm_mtx.unlock();
 }
 
 unsigned int DEMCostmap2D::diffToMapCosts(double diff){
@@ -174,6 +181,7 @@ void DEMCostmap2D::updateBounds(
   unsigned int my;
 
   std::map<unsigned int, double>::iterator dem_iter, dem_end;
+  hdm_mtx.lock();
   for(dem_iter = height_diff_map_.begin(), dem_end = height_diff_map_.end();
     dem_iter != dem_end; ++dem_iter){
     
@@ -188,7 +196,8 @@ void DEMCostmap2D::updateBounds(
     touch(wx, wy, min_x, min_y, max_x, max_y);
     
     setCost(mx, my, cost);
-  } 
+  }
+  hdm_mtx.unlock();
 
 }
 

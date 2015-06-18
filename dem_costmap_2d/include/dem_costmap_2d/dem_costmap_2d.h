@@ -10,8 +10,8 @@
 #include <octomap_msgs/Octomap.h>
 #include <octomap_msgs/conversions.h>
 #include <octomap/octomap.h>
-
 #include <costmap_2d/footprint_layer.h>
+#include <boost/thread/mutex.hpp>
 
 
 
@@ -53,6 +53,8 @@ namespace dem_costmap_2d
       void octomapCallback(const octomap_msgs::Octomap::ConstPtr& msg);
     private:
 
+      boost::mutex hdm_mtx;
+
       unsigned int dx_;
       unsigned int dy_;
 
@@ -60,6 +62,7 @@ namespace dem_costmap_2d
       double diff_range_y_;
       double diff_range_z_;
       double diff_max_z_;
+      double z_max_;
 
       unsigned int diffToMapCosts(double diff);
       std::map<unsigned int, double>height_diff_map_;
