@@ -1,3 +1,6 @@
+#ifndef ROS_PCL_ICP_H_
+#define ROS_PCL_ICP_H_
+
 #include <ros/ros.h>
 
 #include <sensor_msgs/PointCloud2.h>
@@ -57,3 +60,5 @@ class RosPclIcp{
       float leafSize);
 
 };
+
+#endif /* ros_pcl_icp.h */

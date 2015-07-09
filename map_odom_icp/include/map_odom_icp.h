@@ -1,3 +1,6 @@
+#ifndef MAP_ODOM_ICP_H_
+#define MAP_ODOM_ICP_H_
+
 #include <ros/ros.h>
 
 #include <sensor_msgs/PointCloud2.h>
@@ -77,3 +80,5 @@ class MapOdomICP{
     bool use_target_cloud_;
 
 };
+
+#endif /* map_odom_icp.h */

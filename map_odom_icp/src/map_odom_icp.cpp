@@ -231,7 +231,7 @@ void MapOdomICP::sendMapToOdomCombined(){
 }
 
 int main(int args, char** argv){
-  ros::init(args, argv, "pluto_icp");
+  ros::init(args, argv, "map_odom_icp");
   ros::NodeHandle nh;
 
   MapOdomICP map_odom_icp(nh);
