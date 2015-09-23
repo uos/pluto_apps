@@ -2,7 +2,7 @@
 <package>
   <name>map_odom_icp</name>
   <version>1.0.0</version>
-  <description>publishes transforms from map to odom_combined</description>
+  <description>publishes transforms from map to odom_combined by using icp</description>
 
   <maintainer email="spuetz@uos.de">Sebastian Pütz</maintainer>
 
