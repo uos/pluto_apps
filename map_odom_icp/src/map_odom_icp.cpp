@@ -68,6 +68,7 @@ void MapOdomICP::storeTargetCloud(const sensor_msgs::PointCloud2::ConstPtr &targ
 }
 void MapOdomICP::pointCloud2Callback(const sensor_msgs::PointCloud2::ConstPtr &cloud){
   bool succeeded = true;
+  bool first = true;
   if(use_target_cloud_){
     target_mtx_.lock();
     if(target_cloud_ != 0){
@@ -81,12 +82,14 @@ void MapOdomICP::pointCloud2Callback(const sensor_msgs::PointCloud2::ConstPtr &c
     if(previous_cloud_ != 0) {
       succeeded = icpWithPreviousCloud(cloud);   
     }else{
-      getPointCloudPose(*cloud, "map", previous_pose_);
+      first = getPointCloudPose(*cloud, "map", previous_pose_);
       ROS_INFO("Received first cloud.");
     }
   }
 
-  previous_cloud_ = cloud;
+  if(first) {
+    previous_cloud_ = cloud;
+  }
   
   if(succeeded){
     Sync::setUpdated();
