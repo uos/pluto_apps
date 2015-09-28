@@ -113,7 +113,7 @@ void MapOdomICP::storeTargetCloud(const sensor_msgs::PointCloud2::ConstPtr &targ
   target_mtx_.unlock();
 }
 void MapOdomICP::pointCloud2Callback(const sensor_msgs::PointCloud2::ConstPtr &cloud){
-  bool succeeded = true;
+  bool succeeded = false;
   bool first = true;
   if(use_target_cloud_){
     target_mtx_.lock();
