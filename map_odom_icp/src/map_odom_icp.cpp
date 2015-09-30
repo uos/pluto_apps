@@ -46,16 +46,53 @@
 
 #include <map_odom_icp.h>
 
+bool MapOdomICP::Sync::updated_ = false;
+boost::mutex MapOdomICP::Sync::mtx_;
+tf::StampedTransform MapOdomICP::Sync::transform_;
+
+void MapOdomICP::Sync::setTransform(tf::StampedTransform& tf){
+  mtx_.lock();
+  transform_ = tf;
+  updated_ = true;
+  mtx_.unlock();
+}
+
+void MapOdomICP::Sync::getTransform(tf::StampedTransform& tf){
+  mtx_.lock();
+  tf = transform_;
+  mtx_.unlock();
+}
+
+void MapOdomICP::Sync::setUpdated(){
+  mtx_.lock();
+  updated_ = true;
+  mtx_.unlock();
+}
+
+bool MapOdomICP::Sync::hasUpdated(){
+  bool ret = false;
+  mtx_.lock();
+  if(updated_){
+    updated_ = false;
+    ret = true;
+  }
+  mtx_.unlock();
+  return ret;
+}
+
 MapOdomICP::MapOdomICP(ros::NodeHandle &nh)
  :  nh_(nh),
     icp_(nh)
 {
-  tf::Transform null_transform;
-  null_transform.setIdentity();
-  map_to_odom_ = tf::StampedTransform(null_transform, ros::Time::now(), "map", "odom_combined");
-  cloud_sub_ = nh_.subscribe("input_cloud", 20, &MapOdomICP::pointCloud2Callback, this);
+  resetMapOdomTransform();
+
+  cloud_sub_ = nh_.subscribe("input_cloud", 1, &MapOdomICP::pointCloud2Callback, this);
   cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2> ("registered_cloud", 1);
-  
+
+  dynamic_reconfigure::Server<map_odom_icp::MapOdomIcpConfig>::CallbackType dr_cb_type
+    = boost::bind(&MapOdomICP::reconfigureCallback, this, _1, _2);
+  dr_server.setCallback(dr_cb_type);
+
   ros::NodeHandle private_nh("~");
   // ros pcl parameters
   private_nh.param("correspondence_distance", correspondence_distance_, 0.1);
@@ -72,6 +109,53 @@ MapOdomICP::MapOdomICP(ros::NodeHandle &nh)
 
   if(use_target_cloud_)
     target_sub_ = nh_.subscribe("target_cloud", 1, &MapOdomICP::storeTargetCloud, this);
+}
+
+void MapOdomICP::reconfigureCallback(map_odom_icp::MapOdomIcpConfig& config, uint32_t level){
+
+/* Parameters:
+  config.max_corres_dist;
+  config.max_tf_epsilon;
+  config.max_iterations;
+  config.max_rejection_dist;
+  config.max_rejection_angle;
+  config.downsample_target;
+  config.downsmaple_source;
+  config.downsmaple_leafsize;
+  config.icp_type;
+*/
+
+  ROS_INFO("\n Parameters changed to:\n Correspondence Distance: %f \n Transformation Epsilon: %e \n Downsample Target: %s \n Downsample Source: %s \n Downsample Leaf Size: %f \n Maximum Iterations: %d \n Maximum Rejection Distance: %f \n Maximum Rejection Angle: %f \n ICP Type: %d",
+  config.max_corres_dist,
+  config.max_tf_epsilon,
+  config.downsample_target ? "true" : "false",
+  config.downsample_source ? "true" : "false",
+  config.downsample_leafsize,
+  config.max_iterations,
+  config.max_rejection_dist,
+  config.max_rejection_angle,
+  config.icp_type);
+  
+  target_mtx_.lock();
+  icp_.setCorrespondenceDistance(config.max_corres_dist);
+  icp_.setTransformationEpsilon(config.max_tf_epsilon);
+  icp_.setDownsampleTarget(config.downsample_target);
+  icp_.setDownsampleSource(config.downsample_source);
+  icp_.setDownsampleLeafSize(config.downsample_leafsize);
+  icp_.setMaximumIterations(config.max_iterations);
+  icp_.setMaximumRejectionDistance(config.max_rejection_dist);
+  icp_.setMaximumRejectionAngle(config.max_rejection_angle);
+  icp_.setIcpType(config.icp_type);
+  ROS_INFO("resetting map to odom transformation.");
+  resetMapOdomTransform();
+  target_mtx_.unlock(); 
+}
+
+void MapOdomICP::resetMapOdomTransform(){
+  tf::Transform null_transform;
+  null_transform.setIdentity();
+  tf::StampedTransform initial_transform(null_transform, ros::Time::now(), "map", "odom_combined");
+  Sync::setTransform(initial_transform);
 }
 
 bool MapOdomICP::getPointCloudPose( const sensor_msgs::PointCloud2 &cloud,
@@ -108,16 +192,37 @@ bool MapOdomICP::getPointCloudPose( const sensor_msgs::PointCloud2 &cloud,
 void MapOdomICP::storeTargetCloud(const sensor_msgs::PointCloud2::ConstPtr &target){
   target_mtx_.lock();
   ROS_INFO("received new target cloud.");
-  target_cloud_ = target; 
-  getPointCloudPose(*target, "map", target_pose_);
+  geometry_msgs::PoseStamped target_pose;
+  getPointCloudPose(*target, "map", target_pose);
+  icp_.setTargetCloud(target, target_pose);
+  ROS_INFO("preparing target cloud."); 
+  icp_.prepareTarget();
   target_mtx_.unlock();
 }
+
+void MapOdomICP::updateMapOdomTransform(geometry_msgs::Transform& delta_transform){
+
+    // convert to tf
+    tf::Transform delta_transform_tf;
+    tf::transformMsgToTF(delta_transform, delta_transform_tf);
+
+    // calculate the new map to odom_combined transformation
+    tf::StampedTransform map_to_odom;
+    Sync::getTransform(map_to_odom);
+    tf::Transform update_transform_tf = map_to_odom * delta_transform_tf;   
+
+    tf::StampedTransform update_transform_stamped_tf(
+      update_transform_tf, ros::Time::now() , "map", "odom_combined");
+    Sync::setTransform(update_transform_stamped_tf);
+
+}
+
 void MapOdomICP::pointCloud2Callback(const sensor_msgs::PointCloud2::ConstPtr &cloud){
   bool succeeded = false;
   bool first = true;
   if(use_target_cloud_){
     target_mtx_.lock();
-    if(target_cloud_ != 0){
+    if(icp_.isTargetCloudSet()){
       succeeded = icpWithTargetCloud(cloud);    
     }else{
       ROS_INFO("No target cloud set");
@@ -145,13 +250,32 @@ void MapOdomICP::pointCloud2Callback(const sensor_msgs::PointCloud2::ConstPtr &c
 bool MapOdomICP::icpWithTargetCloud(
   const sensor_msgs::PointCloud2::ConstPtr &cloud)
 {
-  geometry_msgs::PoseStamped result_pose;
-  return icpUpdateMapToOdomCombined(
-    target_cloud_,
-    target_pose_,
-    cloud,
-    result_pose
-  );
+  bool succeeded = true;
+  ROS_INFO("ros_icp received new point cloud");
+  
+  geometry_msgs::PoseStamped cloud_pose;
+  getPointCloudPose(*cloud, "map", cloud_pose); 
+
+  geometry_msgs::PoseStamped tmp_result_pose;
+  geometry_msgs::Transform delta_transform;
+
+  // register point cloud to the target cloud with icp
+  ROS_INFO("Start to register point cloud to the target cloud.");
+  succeeded = icp_.registerCloud(
+    *cloud,
+    cloud_pose,
+    tmp_result_pose,
+    delta_transform);
+
+  if(succeeded){
+    ROS_INFO("Registering point cloud to the target cloud succeeded."); 
+    ROS_INFO("Updating the Map to Odom Transformation"); 
+    updateMapOdomTransform(delta_transform);
+  }
+  else{
+    ROS_INFO("Registering point cloud to the target cloud failed!");
+  }
+  return succeeded;
 }
 
 bool MapOdomICP::icpWithPreviousCloud(
@@ -184,8 +308,8 @@ bool MapOdomICP::icpUpdateMapToOdomCombined(
   // register point clouds with icp
   ROS_INFO("register point clouds...");
   succeeded = icp_.registerClouds(
-    *target,
-    target_pose,
+    *previous_cloud_,
+    previous_pose_,
     *cloud,
     cloud_pose,
     tmp_result_pose,
@@ -198,66 +322,26 @@ bool MapOdomICP::icpUpdateMapToOdomCombined(
     downsample_leafsize_);
 
   if(succeeded){
-    ROS_INFO("... register point clouds done.");     
-
-    // convert to tf
-    tf::Transform delta_transform_tf;
-    tf::transformMsgToTF(delta_transform, delta_transform_tf);
-
-    // calculate the new map to odom_combined transformation
-    tf::Transform update_transform_tf = map_to_odom_ * delta_transform_tf;   
-
-    tf::StampedTransform update_transform_stamped_tf(
-      update_transform_tf, cloud->header.stamp, "map", "odom_combined");
-    map_to_odom_ = update_transform_stamped_tf;
-    
-    // update the cloud pose
-    result_pose.pose = tmp_result_pose.pose;
-    result_pose.header = tmp_result_pose.header;
+    ROS_INFO("Registering point cloud to the previous cloud succeeded."); 
+    ROS_INFO("Updating the Map to Odom Transformation"); 
+    updateMapOdomTransform(delta_transform);
   }
   else{
-    ROS_INFO("register point clouds failed.");
+    ROS_INFO("Registering point cloud to the previous cloud failed!");
   }
   return succeeded;
 }
 
 
-bool MapOdomICP::Sync::updated_ = false;
-boost::mutex MapOdomICP::Sync::mtx_;
-
-void MapOdomICP::Sync::setUpdated(){
-  mtx_.lock();
-  updated_ = true;
-  mtx_.unlock();
-}
-
-bool MapOdomICP::Sync::hasUpdated(){
-  bool ret = false;
-  mtx_.lock();
-  if(updated_){
-    updated_ = false;
-    ret = true;
-  }
-  mtx_.unlock();
-  return ret;
-}
 
 void MapOdomICP::sendMapToOdomCombined(){
 
   ros::Time now = ros::Time::now();
 
-  tf_broadcaster_.sendTransform(
-    tf::StampedTransform(
-      map_to_odom_,
-      now,
-      "map",
-      "odom_combined"
-    )
-  );
-
-
   if (Sync::hasUpdated()){
+    Sync::getTransform(map_to_odom_);
     tf::Transform transform = map_to_odom_;
+    
     tf::Vector3 origin = transform.getOrigin();
     tf::Matrix3x3 basis = transform.getBasis();
     tfScalar roll, pitch, yaw;
@@ -270,13 +354,24 @@ void MapOdomICP::sendMapToOdomCombined(){
       roll * 180 / M_PI,
       pitch * 180 / M_PI,
       yaw * 180 / M_PI);
-
+/*
     if(publish_cloud_){
       sensor_msgs::PointCloud2 cloud = *previous_cloud_;
       cloud.header.stamp = now;
       cloud_pub_.publish(cloud);
     }
+
+    */
   }
+  
+  tf_broadcaster_.sendTransform(
+    tf::StampedTransform(
+      map_to_odom_,
+      now,
+      "map",
+      "odom_combined"
+    )
+  );
 }
 
 int main(int args, char** argv){

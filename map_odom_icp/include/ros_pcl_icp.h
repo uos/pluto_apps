@@ -71,6 +71,12 @@ class RosPclIcp{
   public:
     RosPclIcp(ros::NodeHandle &nh);
     
+    bool registerCloud(
+      const sensor_msgs::PointCloud2& cloud,
+      const geometry_msgs::PoseStamped& cloud_pose,
+      geometry_msgs::PoseStamped &result_pose,
+      geometry_msgs::Transform &delta_transform);
+
     bool registerClouds(
       const sensor_msgs::PointCloud2 &target,
       const geometry_msgs::PoseStamped &target_pose,
@@ -85,13 +91,38 @@ class RosPclIcp{
       bool downsample_cloud = false,
       float downsample_leafsize = 0.02f);
 
+    bool isTargetCloudSet();
+
+    void setTargetCloud(
+      const sensor_msgs::PointCloud2::ConstPtr& target_cloud,
+      geometry_msgs::PoseStamped& target_pose);
+    
+    void prepareTarget();
+    void setIcpType(int type);
+    void setCorrespondenceDistance(double dist);
+    void setTransformationEpsilon(double epsilon);
+    void setDownsampleTarget(bool downsample_target);
+    void setDownsampleSource(bool downsample_source);
+    void setDownsampleLeafSize(double leafzize);
+    void setMaximumIterations(int iterations);
+    void setMaximumRejectionDistance(double dist);
+    void setMaximumRejectionAngle(double angle);
+
   private:
     ros::NodeHandle nh_;
     ros::ServiceServer service;
-
+    
+    void convertPointCloud2ToPcl(
+        const sensor_msgs::PointCloud2& cloud, 
+        pcl::PointCloud<pcl::PointXYZ>& pcl_cloud_xyz);
+    
     bool registerCloudsSrv( map_odom_icp::IcpSrv::Request &req,
                             map_odom_icp::IcpSrv::Response &res);
   
+    void estimateNormals(
+      pcl::PointCloud<pcl::PointXYZ>::Ptr xyz_in, 
+      pcl::PointCloud<pcl::PointNormal>::Ptr xyz_normals_out,
+      float radius);
 
     void tfToEigen( const tf::Transform &transform_tf,
                     Eigen::Matrix4f &transform_eigen);
@@ -103,6 +134,21 @@ class RosPclIcp{
       pcl::PointCloud<pcl::PointXYZ>::Ptr &input,
       pcl::PointCloud<pcl::PointXYZ>::Ptr &output,
       float leafSize);
+
+    int m_icp_type;
+    sensor_msgs::PointCloud2::ConstPtr m_target_ptr;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr m_target_xyz_ptr;
+    pcl::PointCloud<pcl::PointNormal>::Ptr m_target_xyz_normals_ptr;
+    geometry_msgs::PoseStamped m_target_pose;
+    double m_correspondence_distance;
+    bool m_downsample_target;
+    bool m_downsample_source;
+    bool m_downsample_leafsize;
+    int m_maximum_iterations;
+    double m_transformation_epsilon;
+    double m_maximum_rejection_distance;
+    double m_maximum_rejection_angle;
+    bool m_target_cloud_set;
 
 };
 

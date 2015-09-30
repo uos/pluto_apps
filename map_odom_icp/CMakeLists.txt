@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   geometry_msgs
   sensor_msgs
+  dynamic_reconfigure
 )
 
 find_package(PCL REQUIRED)
@@ -40,6 +41,10 @@ generate_messages(
   geometry_msgs
 )
 
+generate_dynamic_reconfigure_options(
+  cfg/MapOdomIcp.cfg
+)
+
 catkin_package(
   CATKIN_DEPENDS roscpp sensor_msgs pcl_ros
   INCLUDE_DIRS include
@@ -55,6 +60,7 @@ target_link_libraries(map_odom_icp
 )
 
 add_dependencies(map_odom_icp ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_generate_messages_cpp)
+add_dependencies(map_odom_icp ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
 
 install(TARGETS
   map_odom_icp

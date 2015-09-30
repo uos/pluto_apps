@@ -56,6 +56,8 @@
 #include <ros_pcl_icp.h>
 #include <stack>
 #include <boost/thread/mutex.hpp>
+#include <map_odom_icp/MapOdomIcpConfig.h>
+#include <dynamic_reconfigure/server.h>
 
 class MapOdomICP{
 
@@ -69,9 +71,12 @@ class MapOdomICP{
       public:
         static void setUpdated();
         static bool hasUpdated();
+        static void setTransform(tf::StampedTransform& tf);
+        static void getTransform(tf::StampedTransform& tf);
       private:
         static boost::mutex mtx_; 
         static bool updated_;
+        static tf::StampedTransform transform_;
     };
 
     boost::mutex target_mtx_;
@@ -80,7 +85,8 @@ class MapOdomICP{
     ros::Subscriber cloud_sub_;
     ros::Subscriber target_sub_;
     ros::Publisher cloud_pub_;
-    
+    dynamic_reconfigure::Server<map_odom_icp::MapOdomIcpConfig> dr_server;
+
     tf::TransformListener tf_listener_;
     tf::TransformBroadcaster tf_broadcaster_;
 
@@ -99,6 +105,10 @@ class MapOdomICP{
     void pointCloud2Callback(const::sensor_msgs::PointCloud2::ConstPtr &cloud);
     bool icpWithTargetCloud(const sensor_msgs::PointCloud2::ConstPtr &cloud);
     bool icpWithPreviousCloud(const sensor_msgs::PointCloud2::ConstPtr &cloud);
+
+    void updateMapOdomTransform(geometry_msgs::Transform& delta_transform);
+    void resetMapOdomTransform();
+    void reconfigureCallback(map_odom_icp::MapOdomIcpConfig& config, uint32_t level);
 
     bool icpUpdateMapToOdomCombined(
       const sensor_msgs::PointCloud2::ConstPtr &target,
