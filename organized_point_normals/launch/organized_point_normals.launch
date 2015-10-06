@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<launch>
+  <node name="organized_point_normals" pkg="organized_point_normals" type="organized_point_normals" output="screen" >
+    <remap from="organized_cloud" to="assembled_cloud" />
+    <param name="show_viewer" value="false" />
+  </node>
+</launch>
