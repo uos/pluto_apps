@@ -95,9 +95,9 @@ MapOdomICP::MapOdomICP(ros::NodeHandle &nh)
 
   ros::NodeHandle private_nh("~");
   // ros pcl parameters
-  private_nh.param("correspondence_distance", correspondence_distance_, 0.1);
-  private_nh.param("transformation_epsilon",transformation_epsilon_, 1e-8);
-  private_nh.param("maximum_iterations", maximum_iterations_, 20);
+  private_nh.param("max_corres_dist", correspondence_distance_, 0.1);
+  private_nh.param("max_tf_epsilon",transformation_epsilon_, 1e-8);
+  private_nh.param("max_iterations", maximum_iterations_, 20);
   private_nh.param("downsample_target", downsample_target_, false);
   private_nh.param("downsample_cloud", downsample_cloud_, false);
   private_nh.param("downsample_leafsize", downsample_leafsize_, 0.01);
@@ -112,6 +112,9 @@ MapOdomICP::MapOdomICP(ros::NodeHandle &nh)
 }
 
 void MapOdomICP::reconfigureCallback(map_odom_icp::MapOdomIcpConfig& config, uint32_t level){
+  
+  ROS_INFO("resetting map to odom transformation.");
+  resetMapOdomTransform();
 
 /* Parameters:
   config.max_corres_dist;
@@ -146,8 +149,11 @@ void MapOdomICP::reconfigureCallback(map_odom_icp::MapOdomIcpConfig& config, uin
   icp_.setMaximumRejectionDistance(config.max_rejection_dist);
   icp_.setMaximumRejectionAngle(config.max_rejection_angle);
   icp_.setIcpType(config.icp_type);
-  ROS_INFO("resetting map to odom transformation.");
-  resetMapOdomTransform();
+  
+  if(icp_.isTargetCloudSet()){
+    ROS_INFO("preparing target cloud."); 
+    icp_.prepareTargetCloud();
+  }
   target_mtx_.unlock(); 
 }
 
@@ -172,7 +178,7 @@ bool MapOdomICP::getPointCloudPose( const sensor_msgs::PointCloud2 &cloud,
   }
 
   tf::StampedTransform transform;
-  ROS_INFO("Lookup transform from %s to %s at %f sec",  
+  ROS_DEBUG("Lookup transform from %s to %s at %f sec",  
     fixed_frame.c_str(), cloud.header.frame_id.c_str(), cloud.header.stamp.toSec());
   try
   {
@@ -191,12 +197,15 @@ bool MapOdomICP::getPointCloudPose( const sensor_msgs::PointCloud2 &cloud,
 
 void MapOdomICP::storeTargetCloud(const sensor_msgs::PointCloud2::ConstPtr &target){
   target_mtx_.lock();
-  ROS_INFO("received new target cloud.");
+  ROS_INFO("Received new target cloud.");
   geometry_msgs::PoseStamped target_pose;
-  getPointCloudPose(*target, "map", target_pose);
-  icp_.setTargetCloud(target, target_pose);
-  ROS_INFO("preparing target cloud."); 
-  icp_.prepareTarget();
+  if (getPointCloudPose(*target, "map", target_pose)){
+    icp_.setTargetCloud(target, target_pose);
+    ROS_INFO("preparing target cloud."); 
+    icp_.prepareTargetCloud();
+  }else{
+    ROS_ERROR("Could not get the cloud pose in the map frame, ignoring the target cloud!");
+  }
   target_mtx_.unlock();
 }
 
@@ -218,29 +227,31 @@ void MapOdomICP::updateMapOdomTransform(geometry_msgs::Transform& delta_transfor
 }
 
 void MapOdomICP::pointCloud2Callback(const sensor_msgs::PointCloud2::ConstPtr &cloud){
-  bool succeeded = false;
-  bool first = true;
+  geometry_msgs::PoseStamped cloud_pose;
+  if(!getPointCloudPose(*cloud, "map", cloud_pose)){
+    ROS_ERROR("Could not get the cloud pose in the map frame, ignoring the cloud!");
+    return;
+  }
+  
+  bool succeeded = true;
+  
   if(use_target_cloud_){
-    target_mtx_.lock();
-    if(icp_.isTargetCloudSet()){
-      succeeded = icpWithTargetCloud(cloud);    
+    if(icp_.isTargetCloudPrepared()){
+      target_mtx_.lock();
+      succeeded = icpWithTargetCloud(cloud, cloud_pose);    
+      target_mtx_.unlock();
     }else{
-      ROS_INFO("No target cloud set");
+      ROS_INFO_DELAYED_THROTTLE(5, "No target cloud set");
     }
-    target_mtx_.unlock();
   }
   else{
     if(previous_cloud_ != 0) {
-      succeeded = icpWithPreviousCloud(cloud);   
-    }else{
-      first = getPointCloudPose(*cloud, "map", previous_pose_);
-      ROS_INFO("Received first cloud.");
+      succeeded = icpWithPreviousCloud(cloud, cloud_pose);   
     }
   }
 
-  if(first) {
-    previous_cloud_ = cloud;
-  }
+  previous_pose_ = cloud_pose;
+  previous_cloud_ = cloud;
   
   if(succeeded){
     Sync::setUpdated();
@@ -248,19 +259,16 @@ void MapOdomICP::pointCloud2Callback(const sensor_msgs::PointCloud2::ConstPtr &c
 }
 
 bool MapOdomICP::icpWithTargetCloud(
-  const sensor_msgs::PointCloud2::ConstPtr &cloud)
+  const sensor_msgs::PointCloud2::ConstPtr& cloud,
+  const geometry_msgs::PoseStamped& cloud_pose)
 {
   bool succeeded = true;
-  ROS_INFO("ros_icp received new point cloud");
-  
-  geometry_msgs::PoseStamped cloud_pose;
-  getPointCloudPose(*cloud, "map", cloud_pose); 
 
   geometry_msgs::PoseStamped tmp_result_pose;
   geometry_msgs::Transform delta_transform;
 
   // register point cloud to the target cloud with icp
-  ROS_INFO("Start to register point cloud to the target cloud.");
+  ROS_DEBUG("Start to register point cloud to the target cloud.");
   succeeded = icp_.registerCloud(
     *cloud,
     cloud_pose,
@@ -279,28 +287,25 @@ bool MapOdomICP::icpWithTargetCloud(
 }
 
 bool MapOdomICP::icpWithPreviousCloud(
-  const sensor_msgs::PointCloud2::ConstPtr &cloud)
+  const sensor_msgs::PointCloud2::ConstPtr& cloud,
+  const geometry_msgs::PoseStamped& cloud_pose)
 {
   return icpUpdateMapToOdomCombined(
     previous_cloud_,
     previous_pose_,
     cloud,
-    previous_pose_
+    cloud_pose
   );
 }
 
 bool MapOdomICP::icpUpdateMapToOdomCombined(
-    const sensor_msgs::PointCloud2::ConstPtr &target,
-    const geometry_msgs::PoseStamped &target_pose,
-    const sensor_msgs::PointCloud2::ConstPtr &cloud,
-    geometry_msgs::PoseStamped &result_pose
+    const sensor_msgs::PointCloud2::ConstPtr& target,
+    const geometry_msgs::PoseStamped& target_pose,
+    const sensor_msgs::PointCloud2::ConstPtr& cloud,
+    const geometry_msgs::PoseStamped& cloud_pose
 ){
   bool succeeded = true;
-  ROS_INFO("ros_icp received new point cloud");
-  
-  geometry_msgs::PoseStamped cloud_pose;
-  getPointCloudPose(*cloud, "map", cloud_pose);
-  
+  ROS_INFO("Received new point cloud");
 
   geometry_msgs::PoseStamped tmp_result_pose;
   geometry_msgs::Transform delta_transform;
@@ -354,14 +359,13 @@ void MapOdomICP::sendMapToOdomCombined(){
       roll * 180 / M_PI,
       pitch * 180 / M_PI,
       yaw * 180 / M_PI);
-/*
-    if(publish_cloud_){
+
+    if(publish_cloud_ && previous_cloud_){
       sensor_msgs::PointCloud2 cloud = *previous_cloud_;
       cloud.header.stamp = now;
       cloud_pub_.publish(cloud);
     }
 
-    */
   }
   
   tf_broadcaster_.sendTransform(

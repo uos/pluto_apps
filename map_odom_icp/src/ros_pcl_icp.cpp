@@ -45,7 +45,6 @@
 
 
 #include <ros_pcl_icp.h>
-#include <pcl/features/normal_3d.h>
 
 
 RosPclIcp::RosPclIcp(ros::NodeHandle &nh)
@@ -61,8 +60,8 @@ RosPclIcp::RosPclIcp(ros::NodeHandle &nh)
   m_transformation_epsilon(10e-8),
   m_maximum_rejection_distance(0.4),
   m_maximum_rejection_angle(3.14/4),
-  m_target_cloud_set(false)
-
+  m_target_cloud_set(false),
+  m_target_cloud_prepared(false)
 {
   service = nh_.advertiseService("icp", &RosPclIcp::registerCloudsSrv, this);
 }
@@ -87,10 +86,11 @@ void RosPclIcp::setTargetCloud(
   const sensor_msgs::PointCloud2::ConstPtr& target_cloud,
   geometry_msgs::PoseStamped &target_pose
 ){
+  m_target_cloud_prepared = false;
   // create shared pointers
   m_target_xyz_ptr = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
   m_target_ptr = target_cloud;
-  convertPointCloud2ToPcl(*target_cloud, *m_target_xyz_ptr);
+  convertPointCloud2ToPcl< pcl::PointXYZ >(*m_target_ptr, *m_target_xyz_ptr);
   m_target_pose = target_pose; 
   m_target_cloud_set = true;
 }
@@ -98,14 +98,13 @@ void RosPclIcp::setTargetCloud(
 void RosPclIcp::setIcpType(int type){
   switch(type){
     case 0:
-      break;
     case 1:
-      break;
-    case 2:
+      m_icp_type = type;
       break;
     default:
-      ROS_ERROR("unknown icp type selected!");
-      return;
+      ROS_ERROR("Unknown ICP type selected! Continue with ICP point to point");
+      m_icp_type = ICP_TYPE_POINT_TO_POINT;
+      break;
   }
 }
 
@@ -141,34 +140,45 @@ void RosPclIcp::setMaximumRejectionAngle(double angle){
   m_maximum_rejection_angle = angle;
 }
 
-void RosPclIcp::convertPointCloud2ToPcl(
-  const sensor_msgs::PointCloud2& cloud, 
-  pcl::PointCloud<pcl::PointXYZ>& pcl_cloud_xyz){
 
-  // convert point clouds ro pcl
-  pcl::PCLPointCloud2 pcl_cloud2;
-  pcl_conversions::toPCL(cloud, pcl_cloud2);
-  pcl::fromPCLPointCloud2(pcl_cloud2, pcl_cloud_xyz);
-
+bool RosPclIcp::isTargetCloudPrepared(){
+  return m_target_cloud_prepared;
 }
 
-void RosPclIcp::prepareTarget(){
+void RosPclIcp::prepareTargetCloud(){
+  m_target_cloud_prepared = false;
+  convertPointCloud2ToPcl<pcl::PointXYZ>(*m_target_ptr, *m_target_xyz_ptr);
 
+  ROS_INFO("Input target cloud size: %d", m_target_xyz_ptr->size() );
+  ROS_INFO("Downsample target cloud with leafsize: %f", m_downsample_leafsize);
   // downsample target
   if(m_downsample_target){
     ROS_INFO("Downsampling target cloud.");
     pcl::PointCloud<pcl::PointXYZ>::Ptr target_xyz_downsampled_ptr(
       new pcl::PointCloud<pcl::PointXYZ>);
-    downsampleCloud(m_target_xyz_ptr, target_xyz_downsampled_ptr, m_downsample_leafsize);
+    downsampleCloud<pcl::PointXYZ>(m_target_xyz_ptr, target_xyz_downsampled_ptr, m_downsample_leafsize);
     m_target_xyz_ptr = target_xyz_downsampled_ptr;
   }
+  ROS_INFO("Target cloud size after downsampling: %d", m_target_xyz_ptr->size() );
+
+  // remove nan values from point clouds
+  std::vector<int> indices_target;
+  pcl::removeNaNFromPointCloud(*m_target_xyz_ptr, *m_target_xyz_ptr, indices_target);
+  ROS_INFO("Target cloud size after removing NaN values: %d", m_target_xyz_ptr->size() );
 
   // estimate normals
   ROS_INFO("Estimating normals for the target cloud.");
   m_target_xyz_normals_ptr = 
     pcl::PointCloud<pcl::PointNormal>::Ptr(new pcl::PointCloud<pcl::PointNormal>);
-  estimateNormals(m_target_xyz_ptr, m_target_xyz_normals_ptr, 0.08f);
+  estimateNormals<pcl::PointXYZ, pcl::PointNormal>(m_target_xyz_ptr, m_target_xyz_normals_ptr, 0.4f);
   pcl::copyPointCloud (*m_target_xyz_ptr, *m_target_xyz_normals_ptr);
+  ROS_INFO("Target cloud size after normals estimation: %d", m_target_xyz_normals_ptr->size() );
+  
+  // remove normal NaN values
+  std::vector<int> indices_normals_target;
+  pcl::removeNaNNormalsFromPointCloud(*m_target_xyz_normals_ptr, *m_target_xyz_normals_ptr, indices_normals_target);
+  ROS_INFO("Target cloud size after removing NaN normal values: %d", m_target_xyz_normals_ptr->size() );
+  m_target_cloud_prepared = true;
 }
 
 bool RosPclIcp::registerCloud(
@@ -177,6 +187,11 @@ bool RosPclIcp::registerCloud(
   geometry_msgs::PoseStamped &result_pose,
   geometry_msgs::Transform &delta_transform
 ){
+  if(!isTargetCloudPrepared()){
+    ROS_ERROR("Target cloud is not set, do not execute register cloud!");
+    return false;
+  }
+  
   // calculate initial transform
   tf::Stamped<tf::Pose> target_pose_tf;
   tf::Stamped<tf::Pose> source_pose_tf;
@@ -191,62 +206,72 @@ bool RosPclIcp::registerCloud(
   pcl::PointCloud<pcl::PointXYZ>::Ptr source_xyz_ptr(new pcl::PointCloud<pcl::PointXYZ>);
 
   // convert point cloud to pcl
-  convertPointCloud2ToPcl(source, *source_xyz_ptr);
+  convertPointCloud2ToPcl<pcl::PointXYZ>(source, *source_xyz_ptr);
 
   // downsample source
   if(m_downsample_source){
     ROS_INFO("Downsampling the source cloud.");
     pcl::PointCloud<pcl::PointXYZ>::Ptr source_xyz_downsampled_ptr(
       new pcl::PointCloud<pcl::PointXYZ>);
-    downsampleCloud(source_xyz_ptr, source_xyz_downsampled_ptr, m_downsample_leafsize);
+    downsampleCloud<pcl::PointXYZ>(source_xyz_ptr, source_xyz_downsampled_ptr, m_downsample_leafsize);
     source_xyz_ptr = source_xyz_downsampled_ptr;
   }
 
-  // estimate normals
-  // create shared pointer
-  pcl::PointCloud<pcl::PointNormal>::Ptr source_xyz_normals_ptr(new pcl::PointCloud<pcl::PointNormal>);
-  
-  estimateNormals(source_xyz_ptr, source_xyz_normals_ptr, 0.08f);
-  pcl::copyPointCloud (*source_xyz_ptr, *source_xyz_normals_ptr);
 
   // remove nan values from point clouds
-  std::vector<int> indices_cloud;
+  std::vector<int> indices_source;
+  pcl::removeNaNFromPointCloud(*source_xyz_ptr, *source_xyz_ptr, indices_source);
 
-  indices_cloud.clear();
-  pcl::removeNaNFromPointCloud(*source_xyz_normals_ptr, *source_xyz_normals_ptr, indices_cloud);
-  indices_cloud.clear();
-  pcl::removeNaNFromPointCloud(*m_target_xyz_normals_ptr, *m_target_xyz_normals_ptr, indices_cloud);
-  
-  indices_cloud.clear();
-  pcl::removeNaNFromPointCloud(*source_xyz_ptr, *source_xyz_ptr, indices_cloud);
-  indices_cloud.clear();
-  pcl::removeNaNFromPointCloud(*m_target_xyz_ptr, *m_target_xyz_ptr, indices_cloud);
+  Eigen::Matrix4f final_transform;
+  bool converged = false; 
 
-  ROS_INFO("start icp...");
-  // do icp
-  pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ, float> icp;
-  //pcl::IterativeClosestPointWithNormals<pcl::PointNormal, pcl::PointNormal, float> icp;
+  // Point To Point
+  if( m_icp_type == ICP_TYPE_POINT_TO_POINT ){
+    ROS_INFO("ICP Type With Point to Point selected.");
+    // set up icp
+    pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ, float> icp;
+    icp.setInputSource(source_xyz_ptr);
+    icp.setInputTarget(m_target_xyz_ptr);
+    icp.setMaxCorrespondenceDistance(m_correspondence_distance);
+    icp.setMaximumIterations (m_maximum_iterations);
+    icp.setTransformationEpsilon (m_transformation_epsilon);
+    pcl::PointCloud<pcl::PointXYZ> result;
+    
+    // do icp
+    icp.align(result, initial_transform);
+    // read transform and converge
+    final_transform = icp.getFinalTransformation();
+    converged = icp.hasConverged();
+    ROS_INFO("ICP - Point to Point - has converged: %s, score: %f", icp.hasConverged()? "true":"false", icp.getFitnessScore());
+  }
+  // Point to Plane
+  else if( m_icp_type == ICP_TYPE_WITH_NORMALS )  {
+    ROS_INFO("ICP Type With Normals selected.");
+    // estimate normals
+    // create shared pointer
+    pcl::PointCloud<pcl::PointNormal>::Ptr source_xyz_normals_ptr(new pcl::PointCloud<pcl::PointNormal>);
+    estimateNormals<pcl::PointXYZ, pcl::PointNormal>(source_xyz_ptr, source_xyz_normals_ptr, 0.3f);
+    pcl::copyPointCloud (*source_xyz_ptr, *source_xyz_normals_ptr);
 
-  icp.setMaxCorrespondenceDistance(m_correspondence_distance);
-  icp.setMaximumIterations (m_maximum_iterations);
-  icp.setTransformationEpsilon (m_transformation_epsilon);
-  
-  //icp.setInputSource(source_xyz_normals_ptr);
-  //icp.setInputTarget(m_target_xyz_normals_ptr);
- 
-  icp.setInputSource(source_xyz_ptr);
-  icp.setInputTarget(m_target_xyz_ptr);
-
-  //pcl::PointCloud<pcl::PointNormal> result;
-  pcl::PointCloud<pcl::PointXYZ> result;
-  icp.align(result, initial_transform);
-
-  ROS_INFO("ICP has converged: %s, score: %f", icp.hasConverged()? "true":
-  "false", icp.getFitnessScore());
-
-  //std::cout << icp.getFinalTransformation() << std::endl;
-
-  Eigen::Matrix4f final_transform = icp.getFinalTransformation();
+    // remove NaN normal values
+    std::vector<int> indices_normals_source;
+    pcl::removeNaNNormalsFromPointCloud(*source_xyz_normals_ptr, *source_xyz_normals_ptr, indices_normals_source);
+    
+    // set up icp
+    pcl::IterativeClosestPointWithNormals<pcl::PointNormal, pcl::PointNormal, float> icp;
+    icp.setInputSource(source_xyz_normals_ptr);
+    icp.setInputTarget(m_target_xyz_normals_ptr);
+    icp.setMaxCorrespondenceDistance(m_correspondence_distance);
+    icp.setMaximumIterations (m_maximum_iterations);
+    icp.setTransformationEpsilon (m_transformation_epsilon);
+    pcl::PointCloud<pcl::PointNormal> result;
+    
+    // do icp
+    icp.align(result, initial_transform);
+    final_transform = icp.getFinalTransformation();
+    converged = icp.hasConverged(); 
+    ROS_INFO("ICP - With Normals - has converged: %s, score: %f", icp.hasConverged()? "true":"false", icp.getFitnessScore());
+  }
 
   tf::Transform final_transform_tf;
   eigenToTf(final_transform, final_transform_tf);
@@ -281,7 +306,7 @@ bool RosPclIcp::registerCloud(
 
   tf::transformTFToMsg(delta_transform_tf, delta_transform);
 
-  return icp.hasConverged() && !reject_dist && !reject_angle;
+  return converged && !reject_dist && !reject_angle;
 }
 
 
@@ -301,6 +326,9 @@ bool RosPclIcp::registerClouds(
   )
 {
 
+
+  int icp_type = ICP_TYPE_WITH_NORMALS;
+
   // calculate initial transform
   tf::Stamped<tf::Pose> target_pose_tf;
   tf::Stamped<tf::Pose> cloud_pose_tf;
@@ -312,58 +340,101 @@ bool RosPclIcp::registerClouds(
   tfToEigen(initial_transform_tf, initial_transform);
   
   
+
   // create shared pointers
-  pcl::PointCloud<pcl::PointXYZ>::Ptr target_xyz_ptr(new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_xyz_ptr(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointNormal>::Ptr target_xyz_ptr(new pcl::PointCloud<pcl::PointNormal>);
+  pcl::PointCloud<pcl::PointNormal>::Ptr cloud_xyz_ptr(new pcl::PointCloud<pcl::PointNormal>);
+
+  bool cloud_has_normals = false;
+  bool target_has_normals = false;
+
+  for (size_t i = 0; i < cloud.fields.size (); ++i){
+    if (cloud.fields[i].name == "normals"){
+      cloud_has_normals = true;
+      ROS_INFO("cloud already has normals, using the given normals");
+      break;
+    }
+  }
+  
+  for (size_t i = 0; i < target.fields.size (); ++i){
+    if (target.fields[i].name == "normals"){
+      target_has_normals = true;
+      ROS_INFO("target already has normals, using the given normals");
+      break;
+    }
+  }
+
 
   // convert point clouds to pcl
-  convertPointCloud2ToPcl(target, *target_xyz_ptr);
-  convertPointCloud2ToPcl(cloud, *cloud_xyz_ptr);
+  convertPointCloud2ToPcl<pcl::PointNormal>(target, *target_xyz_ptr);
+  convertPointCloud2ToPcl<pcl::PointNormal>(cloud, *cloud_xyz_ptr);
 
   // downsample clouds
   if(downsample_target){
-    pcl::PointCloud<pcl::PointXYZ>::Ptr target_xyz_downsampled_ptr(
-      new pcl::PointCloud<pcl::PointXYZ>);
-    downsampleCloud(target_xyz_ptr, target_xyz_downsampled_ptr, downsample_leafsize);
+    pcl::PointCloud<pcl::PointNormal>::Ptr target_xyz_downsampled_ptr(
+      new pcl::PointCloud<pcl::PointNormal>);
+    downsampleCloud<pcl::PointNormal>(target_xyz_ptr, target_xyz_downsampled_ptr, downsample_leafsize);
     target_xyz_ptr = target_xyz_downsampled_ptr;
   }
   if(downsample_cloud){
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_xyz_downsampled_ptr(
-      new pcl::PointCloud<pcl::PointXYZ>);
-    downsampleCloud(cloud_xyz_ptr, cloud_xyz_downsampled_ptr, downsample_leafsize);
+    pcl::PointCloud<pcl::PointNormal>::Ptr cloud_xyz_downsampled_ptr(
+      new pcl::PointCloud<pcl::PointNormal>);
+    downsampleCloud<pcl::PointNormal>(cloud_xyz_ptr, cloud_xyz_downsampled_ptr, downsample_leafsize);
     cloud_xyz_ptr = cloud_xyz_downsampled_ptr;
   }
 
   // estimate normals
   // create shared pointers
-  pcl::PointCloud<pcl::PointNormal>::Ptr target_xyz_normals_ptr(new pcl::PointCloud<pcl::PointNormal>);
-  pcl::PointCloud<pcl::PointNormal>::Ptr cloud_xyz_normals_ptr(new pcl::PointCloud<pcl::PointNormal>);
-  
-  estimateNormals(target_xyz_ptr, target_xyz_normals_ptr, 0.08f);
-  pcl::copyPointCloud (*target_xyz_ptr, *target_xyz_normals_ptr);
-  estimateNormals(cloud_xyz_ptr, cloud_xyz_normals_ptr, 0.08f);
-  pcl::copyPointCloud (*cloud_xyz_ptr, *cloud_xyz_normals_ptr);
+  if(!target_has_normals){
+    ROS_INFO("The target has no normals, estimating normals!");
+    estimateNormals<pcl::PointNormal, pcl::PointNormal>(target_xyz_ptr, target_xyz_ptr, 0.08f);
+  }
+  if(!cloud_has_normals){ 
+    ROS_INFO("The cloud has no normals, estimating normals!");
+    estimateNormals<pcl::PointNormal, pcl::PointNormal>(cloud_xyz_ptr, cloud_xyz_ptr, 0.08f);
+  }
+  Eigen::Matrix4f final_transform;
+  bool converged = false; 
+  // Point To Point
+  if( icp_type == ICP_TYPE_POINT_TO_POINT ){
+    ROS_INFO("ICP Type With Point to Point selected.");
+    // set up icp
+    pcl::IterativeClosestPoint<pcl::PointNormal, pcl::PointNormal, float> icp;
+    icp.setInputSource(cloud_xyz_ptr);
+    icp.setInputTarget(target_xyz_ptr);
+    icp.setMaxCorrespondenceDistance(correspondence_distance);
+    icp.setMaximumIterations (maximum_iterations);
+    icp.setTransformationEpsilon (transformation_epsilon);
+    pcl::PointCloud<pcl::PointNormal> result;
 
-  // do icp
-  //pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ, float> icp;
-  pcl::IterativeClosestPointWithNormals<pcl::PointNormal, pcl::PointNormal, float> icp;
-
-  icp.setMaxCorrespondenceDistance(correspondence_distance);
-  icp.setMaximumIterations (maximum_iterations);
-  icp.setTransformationEpsilon (transformation_epsilon);
-  
-  icp.setInputSource(cloud_xyz_normals_ptr);
-  icp.setInputTarget(target_xyz_normals_ptr);
-  
-  pcl::PointCloud<pcl::PointNormal> result;
-  icp.align(result, initial_transform);
-
-  ROS_INFO("ICP has converged: %s, score: %f", icp.hasConverged()? "true":
-  "false", icp.getFitnessScore());
-
-  //std::cout << icp.getFinalTransformation() << std::endl;
-
-  Eigen::Matrix4f final_transform = icp.getFinalTransformation();
+    // do icp
+    icp.align(result, initial_transform);
+    // read transform and converge
+    final_transform = icp.getFinalTransformation();
+    converged = icp.hasConverged();
+    ROS_INFO("ICP - Point to Point - has converged: %s, score: %f", icp.hasConverged()? "true":"false", icp.getFitnessScore());
+  }
+  // Point to Plane
+  else if( icp_type == ICP_TYPE_WITH_NORMALS )  {
+    ROS_INFO("ICP Type With Normals selected.");
+    // set up icp
+    pcl::IterativeClosestPointWithNormals<pcl::PointNormal, pcl::PointNormal, float> icp;
+    icp.setInputSource(cloud_xyz_ptr);
+    icp.setInputTarget(target_xyz_ptr);
+    icp.setMaxCorrespondenceDistance(correspondence_distance);
+    icp.setMaximumIterations (maximum_iterations);
+    icp.setTransformationEpsilon (transformation_epsilon);
+    pcl::PointCloud<pcl::PointNormal> result;
+    
+    // do icp
+    icp.align(result, initial_transform);
+    final_transform = icp.getFinalTransformation();
+    converged = icp.hasConverged(); 
+    ROS_INFO("ICP - With Normals - has converged: %s, score: %f", icp.hasConverged()? "true":"false", icp.getFitnessScore());
+  }else{
+    ROS_ERROR("unsupported icp type selected! - cancel");
+    return false;
+  }
 
   tf::Transform final_transform_tf;
   eigenToTf(final_transform, final_transform_tf);
@@ -378,35 +449,10 @@ bool RosPclIcp::registerClouds(
   tf::Transform delta_transform_tf = initial_transform_tf.inverseTimes(final_transform_tf);
   tf::transformTFToMsg(delta_transform_tf, delta_transform);
 
-  return icp.hasConverged();
+  return converged;
 }
 
 
-void RosPclIcp::estimateNormals(
-   pcl::PointCloud<pcl::PointXYZ>::Ptr xyz_in, 
-   pcl::PointCloud<pcl::PointNormal>::Ptr xyz_normals_out,
-   float radius)
-{
-  pcl::NormalEstimation<pcl::PointXYZ, pcl::PointNormal> norm_est;
-  pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ> ());
-  norm_est.setSearchMethod (tree);
-  //norm_est.setKSearch (30);
-  norm_est.setRadiusSearch(radius);
-
-  norm_est.setInputCloud (xyz_in);
-  norm_est.compute (*xyz_normals_out);
-}
-
-void RosPclIcp::downsampleCloud(
-    pcl::PointCloud<pcl::PointXYZ>::Ptr &input,
-    pcl::PointCloud<pcl::PointXYZ>::Ptr &output,
-    float leafSize)
-{
-  pcl::VoxelGrid<pcl::PointXYZ>sor;
-  sor.setInputCloud (input);
-  sor.setLeafSize (leafSize, leafSize, leafSize);
-  sor.filter(*output);
-}
 
 
 void RosPclIcp::eigenToTf(

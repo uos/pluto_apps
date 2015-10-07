@@ -1,14 +1,16 @@
 <?xml version="1.0"?>
 <launch>
-  <node name="map_odom_icp" pkg="map_odom_icp" type="map_odom_icp"
-  output="screen" >
+  <node name="map_odom_icp" pkg="map_odom_icp" type="map_odom_icp" output="screen">
     <remap from="input_cloud" to="assembled_cloud" />
     <remap from="target_cloud" to="octomap_point_cloud_centers"/>
     <param name="use_target_cloud" value="false" />
-    <param name="correspondence_distance" value="0.4"/> 
-    <param name="maximum_iterations" value="100"/>
-    <param name="downsample_cloud" value="false"/>
+    <param name="max_corres_dist" value="0.2"/> 
+    <param name="max_tf_epsilon" value="0.00001"/> 
+    <param name="max_iterations" value="30"/>
+    <param name="downsample_source" value="false"/>
     <param name="downsample_target" value="false"/>
-    <param name="downsample_leafsize" value="0.02"/>
+    <param name="downsample_leafsize" value="0.04"/>
+    <param name="icp_type" value="1"/>
+    <param name="publish_cloud" value="true"/>
   </node>
 </launch>

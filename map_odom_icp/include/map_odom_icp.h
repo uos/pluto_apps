@@ -103,18 +103,26 @@ class MapOdomICP{
 
     void storeTargetCloud(const sensor_msgs::PointCloud2::ConstPtr &cloud);
     void pointCloud2Callback(const::sensor_msgs::PointCloud2::ConstPtr &cloud);
-    bool icpWithTargetCloud(const sensor_msgs::PointCloud2::ConstPtr &cloud);
-    bool icpWithPreviousCloud(const sensor_msgs::PointCloud2::ConstPtr &cloud);
+    
+    bool icpWithTargetCloud(
+      const sensor_msgs::PointCloud2::ConstPtr& cloud,
+      const geometry_msgs::PoseStamped& cloud_pose
+    );
+    
+    bool icpWithPreviousCloud(
+      const sensor_msgs::PointCloud2::ConstPtr& cloud,
+      const geometry_msgs::PoseStamped& cloud_pose
+    );
 
     void updateMapOdomTransform(geometry_msgs::Transform& delta_transform);
     void resetMapOdomTransform();
     void reconfigureCallback(map_odom_icp::MapOdomIcpConfig& config, uint32_t level);
 
     bool icpUpdateMapToOdomCombined(
-      const sensor_msgs::PointCloud2::ConstPtr &target,
-      const geometry_msgs::PoseStamped &target_pose,
-      const sensor_msgs::PointCloud2::ConstPtr &cloud,
-      geometry_msgs::PoseStamped &result_pose
+      const sensor_msgs::PointCloud2::ConstPtr& target,
+      const geometry_msgs::PoseStamped& target_pose,
+      const sensor_msgs::PointCloud2::ConstPtr& cloud,
+      const geometry_msgs::PoseStamped& cloud_pose
     );
     
     bool getPointCloudPose(

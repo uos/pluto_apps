@@ -63,12 +63,16 @@
 #include <pcl/point_types.h>
 #include <pcl/PCLPointCloud2.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/features/normal_3d.h>
 
 #include <map_odom_icp/IcpSrv.h>
 
 class RosPclIcp{
 
   public:
+    static const unsigned int ICP_TYPE_POINT_TO_POINT = 0;
+    static const unsigned int ICP_TYPE_WITH_NORMALS = 1;
+
     RosPclIcp(ros::NodeHandle &nh);
     
     bool registerCloud(
@@ -97,7 +101,9 @@ class RosPclIcp{
       const sensor_msgs::PointCloud2::ConstPtr& target_cloud,
       geometry_msgs::PoseStamped& target_pose);
     
-    void prepareTarget();
+    bool isTargetCloudPrepared();
+    void prepareTargetCloud();
+    
     void setIcpType(int type);
     void setCorrespondenceDistance(double dist);
     void setTransformationEpsilon(double epsilon);
@@ -111,24 +117,54 @@ class RosPclIcp{
   private:
     ros::NodeHandle nh_;
     ros::ServiceServer service;
-    
-    void convertPointCloud2ToPcl(
-        const sensor_msgs::PointCloud2& cloud, 
-        pcl::PointCloud<pcl::PointXYZ>& pcl_cloud_xyz);
+
+    template <typename PointType>
+      void convertPointCloud2ToPcl(
+          const sensor_msgs::PointCloud2& cloud, 
+          typename pcl::PointCloud<PointType>& pcl_cloud_xyz){
+
+        // convert point clouds ro pcl
+        pcl::PCLPointCloud2 pcl_cloud2;
+        pcl_conversions::toPCL(cloud, pcl_cloud2);
+        pcl::fromPCLPointCloud2(pcl_cloud2, pcl_cloud_xyz);
+
+      }
     
     bool registerCloudsSrv( map_odom_icp::IcpSrv::Request &req,
                             map_odom_icp::IcpSrv::Response &res);
-  
-    void estimateNormals(
-      pcl::PointCloud<pcl::PointXYZ>::Ptr xyz_in, 
-      pcl::PointCloud<pcl::PointNormal>::Ptr xyz_normals_out,
-      float radius);
+    template <typename PointTypeA, typename PointTypeB>
+      void estimateNormals(
+          typename pcl::PointCloud<PointTypeA>::Ptr xyz_in, 
+          typename pcl::PointCloud<PointTypeB>::Ptr xyz_normals_out,
+          float radius)
+      {
+        typename pcl::NormalEstimation<PointTypeA, PointTypeB> norm_est;
+        typename pcl::search::KdTree<PointTypeA>::Ptr tree (new typename pcl::search::KdTree<PointTypeA> ());
+        norm_est.setSearchMethod (tree);
+        //norm_est.setKSearch (30);
+        norm_est.setRadiusSearch(radius);
+
+        norm_est.setInputCloud (xyz_in);
+        norm_est.compute (*xyz_normals_out);
+      }
 
     void tfToEigen( const tf::Transform &transform_tf,
                     Eigen::Matrix4f &transform_eigen);
     
     void eigenToTf( const Eigen::Matrix4f &transform_eigen,
                     tf::Transform &transform_tf);
+
+    template<typename PointType>
+    void downsampleCloud(
+        typename pcl::PointCloud<PointType>::Ptr &input,
+        typename pcl::PointCloud<PointType>::Ptr &output,
+        float leafSize)
+    {
+      typename pcl::VoxelGrid<PointType>sor;
+      sor.setInputCloud (input);
+      sor.setLeafSize (leafSize, leafSize, leafSize);
+      sor.filter(*output);
+    }
 
     void downsampleCloud(
       pcl::PointCloud<pcl::PointXYZ>::Ptr &input,
@@ -143,13 +179,14 @@ class RosPclIcp{
     double m_correspondence_distance;
     bool m_downsample_target;
     bool m_downsample_source;
-    bool m_downsample_leafsize;
+    double m_downsample_leafsize;
     int m_maximum_iterations;
     double m_transformation_epsilon;
     double m_maximum_rejection_distance;
     double m_maximum_rejection_angle;
     bool m_target_cloud_set;
-
+    bool m_target_cloud_prepared;
 };
+
 
 #endif /* ros_pcl_icp.h */
