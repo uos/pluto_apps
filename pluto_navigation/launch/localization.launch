@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<launch>
+  ## octomap
+  <node pkg="octomap_server" type="octomap_server_node" name="octomap_server">
+		<param name="filter_ground" value="false"/>
+    <param name="resolution" value="0.04" />
+		<param name="frame_id" type="string" value="map" />
+		<param name="sensor_model/max_range" value="7.0" />
+    <param name="pointcloud_max_z" value="3.5" />
+		<remap from="cloud_in" to="registered_cloud" />
+	</node>
+
+  ## map odom icp forlocalization
+  <node name="map_odom_icp" pkg="map_odom_icp" type="map_odom_icp" output="screen">
+    <remap from="input_cloud" to="assembled_cloud" />
+    <remap from="target_cloud" to="octomap_point_cloud_centers"/>
+    <param name="use_target_cloud" value="false" />
+    <param name="max_corres_dist" value="0.2"/> 
+    <param name="max_tf_epsilon" value="0.00001"/> 
+    <param name="max_iterations" value="30"/>
+    <param name="downsample_source" value="false"/>
+    <param name="downsample_target" value="false"/>
+    <param name="downsample_leafsize" value="0.04"/>
+    <param name="icp_type" value="1"/>
+    <param name="publish_cloud" value="true"/>
+  </node>
+</launch>
+
