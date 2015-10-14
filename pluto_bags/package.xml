@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package>
+  <name>pluto_bags</name>
+  <version>0.0.0</version>
+  <description>Use this package as bag file storage, all bag files are only local and *.bag is listed in the gitignore</description>
+
+  <maintainer email="spuetz@uos.de">Sebastian Pütz</maintainer>
+  <license>BSD</license>
+  <author email="spuetz@uos.de">Sebastian Pütz</author> -->
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <export>
+    <metapackage/>
+  </export>
+</package>

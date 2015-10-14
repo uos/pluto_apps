@@ -1,0 +1,2 @@
+# bag files are only local, because the file size is often to big
+*.bag
