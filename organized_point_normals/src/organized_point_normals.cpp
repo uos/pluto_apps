@@ -61,14 +61,14 @@ OrganizedPointNormals::OrganizedPointNormals(ros::NodeHandle& nh)
     normal_smoothing_size(1),
     normal_estimation_mode(0)
 {
-  sub = nh.subscribe("organized_cloud", 10, &OrganizedPointNormals::pointCloudCallback, this);
-  pub = nh.advertise<sensor_msgs::PointCloud2>("organized_cloud_with_normals", 10);
+  sub = nh.subscribe("organized_cloud", 1, &OrganizedPointNormals::pointCloudCallback, this);
+  pub = nh.advertise<sensor_msgs::PointCloud2>("organized_cloud_with_normals", 1);
   
   ros::NodeHandle p_nh("~");
   p_nh.param("normal_estimation_mode", normal_estimation_mode, 0);
   p_nh.param("normal_smoothing_size", normal_smoothing_size, 1.0);
   p_nh.param("max_depth_change_factor", max_depth_change_factor, 0.1);
-  p_nh.param("show_viewer", show_viewer, true);
+  p_nh.param("show_viewer", show_viewer, false);
 
   dynamic_reconfigure::Server<organized_point_normals::OrganizedPointNormalsConfig>::CallbackType f;
   f = boost::bind(&OrganizedPointNormals::reconfigureCallback, this, _1, _2);
@@ -110,7 +110,6 @@ void OrganizedPointNormals::pointCloudCallback(const sensor_msgs::PointCloud2::C
             normal_estimation_mode == NE_MODE_AVERAGE_DEPTH_CHANGE ||
             normal_estimation_mode == NE_MODE_SIMPLE_3D_GRADIENT){
       pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
-
       pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal>::NormalEstimationMethod mode;
       switch(normal_estimation_mode){
         case NE_MODE_COVARIANCE_MATRIX:
@@ -135,6 +134,8 @@ void OrganizedPointNormals::pointCloudCallback(const sensor_msgs::PointCloud2::C
       ne.setMaxDepthChangeFactor(max_depth_change_factor);  // 0.02f
       ne.setNormalSmoothingSize(normal_smoothing_size);  //10
       ne.setInputCloud(cloud_organized);
+      ne.setBorderPolicy( pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal>::BORDER_POLICY_MIRROR); 
+
       ne.compute(*normals);
   }else{
     ROS_ERROR("unknown normal estimation mode!");
@@ -146,12 +147,14 @@ void OrganizedPointNormals::pointCloudCallback(const sensor_msgs::PointCloud2::C
   pcl::concatenateFields (*cloud_organized, *normals, *cloud_organized_normals);
   
   // visualize normals
-  if(!viewer){
-    viewer = new pcl::visualization::PCLVisualizer("Estimated Normals");
-    viewer->setBackgroundColor (0.0, 0.0, 0.5);
+  if(show_viewer){
+    if(!viewer){
+      viewer = new pcl::visualization::PCLVisualizer("Estimated Normals");
+      viewer->setBackgroundColor (0.0, 0.0, 0.5);
+    }
+    viewer->removeAllPointClouds();
+    viewer->addPointCloudNormals<pcl::PointNormal>(cloud_organized_normals);
   }
-  viewer->removeAllPointClouds();
-  viewer->addPointCloudNormals<pcl::PointNormal>(cloud_organized_normals);
 
   // convert to PointCloud2 and publish
   pcl::PCLPointCloud2 output;
@@ -160,6 +163,8 @@ void OrganizedPointNormals::pointCloudCallback(const sensor_msgs::PointCloud2::C
   pcl_conversions::fromPCL(output, pc2_output);
   pub.publish(pc2_output);
 
+  // use the old cloud time stamp
+  pc2_output.header.stamp = cloud_ptr->header.stamp;
 }
 
 void OrganizedPointNormals::calculateOrganizedFastNormals(

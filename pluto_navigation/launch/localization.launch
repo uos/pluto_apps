@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <launch>
-  ## octomap
+  ## octomap server
   <node pkg="octomap_server" type="octomap_server_node" name="octomap_server">
 		<param name="filter_ground" value="false"/>
     <param name="resolution" value="0.04" />
@@ -9,20 +9,42 @@
     <param name="pointcloud_max_z" value="3.5" />
 		<remap from="cloud_in" to="registered_cloud" />
 	</node>
+  
+  ## compute point normals using integral images 
+  <node name="organized_velodyne_normals" pkg="organized_point_normals" type="organized_point_normals" output="screen" >
+    <remap from="organized_cloud" to="velodyne_points" />
+    <remap from="organized_cloud_with_normals" to="velodyne_points_with_normals" />
+    <param name="show_viewer" value="false" />
+    <param name="normal_estimation_mode" value="0" />
+    <param name="normal_smoothing_size" value="6.5" />
+    <param name="max_depth_change_factor" value="0.06"/>
+  </node>
+  
+  ## compute point normals using integral images 
+  <node name="organized_point_normals" pkg="organized_point_normals" type="organized_point_normals" output="screen" >
+    <remap from="organized_cloud" to="assembled_cloud" />
+    <param name="show_viewer" value="false" />
+    <param name="normal_estimation_mode" value="0" />
+    <param name="normal_smoothing_size" value="6.5" />
+    <param name="max_depth_change_factor" value="0.06"/>
+  </node>
 
-  ## map odom icp forlocalization
-  <node name="map_odom_icp" pkg="map_odom_icp" type="map_odom_icp" output="screen">
-    <remap from="input_cloud" to="assembled_cloud" />
-    <remap from="target_cloud" to="octomap_point_cloud_centers"/>
-    <param name="use_target_cloud" value="false" />
-    <param name="max_corres_dist" value="0.2"/> 
-    <param name="max_tf_epsilon" value="0.00001"/> 
+  ## map odom icp for localization and map registration
+  <node name="map_odom_icp" pkg="map_odom_icp" type="map_odom_icp" output="screen" launch-prefix="xterm -e gdb --args" >
+    <remap from="input_cloud" to="organized_cloud_with_normals" />
+    <remap from="target_cloud" to="registered_cloud"/>
+    <param name="use_target_cloud" value="true" />
+    <param name="max_corres_dist" value="0.35"/>
+    <param name="max_rejection_dist" value="0.4"/>
+    <param name="max_rejection_angle" value="20"/>
+    <param name="max_tf_epsilon" value="0.0000001"/> 
     <param name="max_iterations" value="30"/>
     <param name="downsample_source" value="false"/>
     <param name="downsample_target" value="false"/>
     <param name="downsample_leafsize" value="0.04"/>
     <param name="icp_type" value="1"/>
     <param name="publish_cloud" value="true"/>
+    <param name="show_viewer" value="false"/>
   </node>
 </launch>
 

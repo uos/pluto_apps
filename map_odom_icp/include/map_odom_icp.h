@@ -64,6 +64,7 @@ class MapOdomICP{
   public:
     MapOdomICP(ros::NodeHandle &nh);
     void sendMapToOdomCombined();
+
   private:
     RosPclIcp icp_;
 
@@ -90,10 +91,6 @@ class MapOdomICP{
     tf::TransformListener tf_listener_;
     tf::TransformBroadcaster tf_broadcaster_;
 
-    //std::stack<tf::StampedTransform>map_to_odom_;
-    //std::stack<sensor_msgs::PointCloud2> clouds_;
-    //std::stack<geometry_msgs::PoseStamped> poses_;
-
     sensor_msgs::PointCloud2::ConstPtr target_cloud_;
     sensor_msgs::PointCloud2::ConstPtr previous_cloud_;
 
@@ -106,12 +103,14 @@ class MapOdomICP{
     
     bool icpWithTargetCloud(
       const sensor_msgs::PointCloud2::ConstPtr& cloud,
-      const geometry_msgs::PoseStamped& cloud_pose
+      const geometry_msgs::PoseStamped& cloud_pose,
+      geometry_msgs::PoseStamped& result_pose
     );
     
     bool icpWithPreviousCloud(
       const sensor_msgs::PointCloud2::ConstPtr& cloud,
-      const geometry_msgs::PoseStamped& cloud_pose
+      const geometry_msgs::PoseStamped& cloud_pose,
+      geometry_msgs::PoseStamped& result_pose
     );
 
     void updateMapOdomTransform(geometry_msgs::Transform& delta_transform);
@@ -122,7 +121,8 @@ class MapOdomICP{
       const sensor_msgs::PointCloud2::ConstPtr& target,
       const geometry_msgs::PoseStamped& target_pose,
       const sensor_msgs::PointCloud2::ConstPtr& cloud,
-      const geometry_msgs::PoseStamped& cloud_pose
+      const geometry_msgs::PoseStamped& cloud_pose,
+      geometry_msgs::PoseStamped& result_pose
     );
     
     bool getPointCloudPose(

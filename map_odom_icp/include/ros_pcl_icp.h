@@ -64,8 +64,12 @@
 #include <pcl/PCLPointCloud2.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/features/normal_3d.h>
+#include <pcl/visualization/pcl_visualizer.h>
 
 #include <map_odom_icp/IcpSrv.h>
+
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/thread.hpp>
 
 class RosPclIcp{
 
@@ -74,7 +78,8 @@ class RosPclIcp{
     static const unsigned int ICP_TYPE_WITH_NORMALS = 1;
 
     RosPclIcp(ros::NodeHandle &nh);
-    
+    ~RosPclIcp();
+
     bool registerCloud(
       const sensor_msgs::PointCloud2& cloud,
       const geometry_msgs::PoseStamped& cloud_pose,
@@ -114,9 +119,14 @@ class RosPclIcp{
     void setMaximumRejectionDistance(double dist);
     void setMaximumRejectionAngle(double angle);
 
+    void showViewer(bool enable);
+
+  
   private:
     ros::NodeHandle nh_;
     ros::ServiceServer service;
+
+   
 
     template <typename PointType>
       void convertPointCloud2ToPcl(
@@ -186,6 +196,14 @@ class RosPclIcp{
     double m_maximum_rejection_angle;
     bool m_target_cloud_set;
     bool m_target_cloud_prepared;
+    
+    void viewerLoop();
+    void startViewer();
+    pcl::visualization::PCLVisualizer* m_viewer;
+    boost::thread m_viewer_thread;
+    bool m_viewer_enabled;
+    boost::mutex m_viewer_mtx;
+
 };
 
 
