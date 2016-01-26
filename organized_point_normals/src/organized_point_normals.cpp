@@ -49,8 +49,8 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/features/integral_image_normal.h>
 #include <pcl/io/pcd_io.h>
-
-
+#include <pcl/console/time.h>
+#include <pcl/features/normal_3d.h>
 
 
 
@@ -83,11 +83,12 @@ void OrganizedPointNormals::reconfigureCallback(organized_point_normals::Organiz
   normal_estimation_mode = config.normal_estimation_mode;
   normal_smoothing_size = config.normal_smoothing_size;
   max_depth_change_factor = config.max_depth_change_factor;
-  
+  radius_search_knn = config.radius_search_knn;
 
 }
 
 void OrganizedPointNormals::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr& cloud_ptr){
+  
   // convert to pcl PointCloud
   pcl::PCLPointCloud2 pcl_cloud;
   pcl_conversions::toPCL(*cloud_ptr, pcl_cloud);
@@ -98,6 +99,9 @@ void OrganizedPointNormals::pointCloudCallback(const sensor_msgs::PointCloud2::C
     ROS_WARN("The given cloud is not organized, ignoring the cloud!");
     return;
   }
+
+  pcl::console::TicToc time;
+  time.tic();
 
   // estimate normals
   pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
@@ -137,11 +141,21 @@ void OrganizedPointNormals::pointCloudCallback(const sensor_msgs::PointCloud2::C
       ne.setBorderPolicy( pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal>::BORDER_POLICY_MIRROR); 
 
       ne.compute(*normals);
-  }else{
-    ROS_ERROR("unknown normal estimation mode!");
-    return;
+  }else {
+    ROS_INFO("standard k-NN normal estimation mode!");
+
+    // Create the normal estimation class, and pass the input dataset to it
+    pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
+    ne.setInputCloud(cloud_organized);
+    // Its content will be filled inside the object, based on the given input dataset (as no other search surface is given).
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ> ());
+    ne.setSearchMethod (tree);
+    pcl::PointCloud<pcl::Normal>::Ptr cloud_normals (new pcl::PointCloud<pcl::Normal>);
+    ne.setRadiusSearch (radius_search_knn);
+    ne.compute (*normals);
   }
 
+  time.toc_print();
   // concatenate clouds
   pcl::PointCloud<pcl::PointNormal>::Ptr cloud_organized_normals (new pcl::PointCloud<pcl::PointNormal>);
   pcl::concatenateFields (*cloud_organized, *normals, *cloud_organized_normals);

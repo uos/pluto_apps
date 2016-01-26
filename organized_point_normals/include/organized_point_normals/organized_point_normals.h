@@ -72,6 +72,7 @@ class OrganizedPointNormals{
     dynamic_reconfigure::Server<organized_point_normals::OrganizedPointNormalsConfig> reconfigure_server;
     double max_depth_change_factor;
     double normal_smoothing_size;
+    double radius_search_knn;
     int normal_estimation_mode;
     bool show_viewer;
     pcl::visualization::PCLVisualizer* viewer;
