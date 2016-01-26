@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<launch>
+  <node pkg="costmap_2d" type="costmap_2d_markers" name="voxel_visualizer">
+    <remap from="voxel_grid" to="costmap/voxel_grid"/>
+  </node>
+
+  <node name="move_base" pkg="move_base" respawn="false" type="move_base"
+  output="screen">
+    <param name="base_local_planner" value="dwa_local_planner/DWAPlannerROS"/>
+
+    <rosparam file="$(find pluto_navigation)/config/move_base_params.yaml"
+    command="load" />
+    
+    <rosparam file="$(find pluto_navigation)/config/dwa_local_planner_params.yaml" command="load"
+    />
+    
+    <rosparam file="$(find pluto_navigation)/config/local_costmap_params.yaml" command="load" ns="global_costmap"/>
+    <rosparam file="$(find pluto_navigation)/config/global_costmap_params.yaml" command="load" ns="local_costmap"/>
+    
+    <rosparam file="$(find pluto_navigation)/config/costmap_params.yaml" command="load" ns="global_costmap" />
+    <rosparam file="$(find pluto_navigation)/config/costmap_params.yaml" command="load" ns="local_costmap" />
+    <param name="global_costmap/dem_costmap/diff_range_x" value="0.1"/>
+    <param name="global_costmap/dem_costmap/diff_range_y" value="0.1"/>
+    <param name="global_costmap/dem_costmap/diff_range_z" value="0.5"/>
+    <param name="global_costmap/dem_costmap/diff_max_z" value="0.28"/>
+    <param name="global_costmap/dem_costmap/z_max" value="1.5"/>
+    <param name="local_costmap/dem_costmap/diff_range_x" value="0.1"/>
+    <param name="local_costmap/dem_costmap/diff_range_y" value="0.1"/>
+    <param name="local_costmap/dem_costmap/diff_range_z" value="0.5"/>
+    <param name="local_costmap/dem_costmap/diff_max_z" value="0.28"/>
+    <param name="local_costmap/dem_costmap/z_max" value="1.5"/>
+  </node>
+</launch>
