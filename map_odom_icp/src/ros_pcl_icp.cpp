@@ -376,6 +376,7 @@ bool RosPclIcp::registerCloud(
   tf::poseStampedTFToMsg(result_pose_stamped_tf, result_pose);
   
   tf::Transform delta_transform_tf = initial_transform_tf.inverseTimes(final_transform_tf);
+  //tf::Transform delta_transform_tf = final_transform_tf.inverseTimes(initial_transform_tf);
   //tf::Transform delta_transform_tf = source_pose_tf.inverseTimes(result_pose_tf);
   
   tf::Vector3 origin = delta_transform_tf.getOrigin();

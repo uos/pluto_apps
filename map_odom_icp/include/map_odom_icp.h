@@ -95,6 +95,7 @@ class MapOdomICP{
     sensor_msgs::PointCloud2::ConstPtr previous_cloud_;
 
     geometry_msgs::PoseStamped target_pose_;
+    geometry_msgs::PoseStamped cloud_pose_;
     geometry_msgs::PoseStamped previous_pose_;
     tf::StampedTransform map_to_odom_;
 
@@ -124,7 +125,12 @@ class MapOdomICP{
       const geometry_msgs::PoseStamped& cloud_pose,
       geometry_msgs::PoseStamped& result_pose
     );
-    
+   
+    bool getOdomCombinedTransform(
+      const std::string& sensor_frame,
+      const ros::Time& time,
+      tf::StampedTransform& transform);
+
     bool getPointCloudPose(
       const sensor_msgs::PointCloud2 &cloud,
       const std::string &fixed_frame,
