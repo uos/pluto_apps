@@ -65,7 +65,7 @@ void DEMCostmap2D::onInitialize()
   DEMCostmap2D::matchSize();
   setupDynamicReconfigure(nh);
   sub = nh_g.subscribe("octomap_full", 10, &DEMCostmap2D::octomapCallback, this);
-  ROS_INFO("DEM Costmap 2D Plugin loaded.");
+  ROS_INFO("DEM Costmap 2D Plugin loaded as %s", name_.c_str());
   
   nh.param("diff_range_x", diff_range_x_, 0.1);
   nh.param("diff_range_y", diff_range_y_, 0.1);
@@ -203,6 +203,11 @@ DEMCostmap2D::~DEMCostmap2D()
 void DEMCostmap2D::reconfigureCB(dem_costmap_2d::DEMCostmap2DConfig &config, uint32_t level)
 {
   enabled_ = config.enabled;
+  diff_range_x_ = config.diff_range_x;
+  diff_range_y_ = config.diff_range_y;
+  diff_range_z_ = config.diff_range_z;
+  diff_max_z_ = config.diff_max_z;
+  z_max_ = config.z_max;
 }
 
 void DEMCostmap2D::updateBounds(
