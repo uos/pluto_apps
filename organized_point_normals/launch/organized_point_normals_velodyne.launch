@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<launch>
+  <node name="organized_velodyne_normals" pkg="organized_point_normals" type="organized_point_normals" output="screen" >
+    <remap from="organized_cloud" to="velodyne_points" />
+    <remap from="organized_cloud_with_normals" to="velodyne_points_with_normals" />
+    <param name="show_viewer" value="false" />
+  </node>
+</launch>
