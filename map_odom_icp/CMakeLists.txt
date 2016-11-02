@@ -7,6 +7,7 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_ros
   rospy
   std_msgs
+  message_generation
   geometry_msgs
   sensor_msgs
   dynamic_reconfigure
@@ -16,6 +17,7 @@ find_package(PCL REQUIRED)
 
 include_directories(
   include
+  ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
 )
 
@@ -55,7 +57,7 @@ target_link_libraries(map_odom_icp
   ${PCL_LIBRARIES}
 )
 
-add_dependencies(map_odom_icp ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg)
+add_dependencies(map_odom_icp ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_EXPORTED_TARGETS ${PROJECT_NAME}_gencfg)
 
 install(TARGETS
   map_odom_icp
