@@ -56,7 +56,6 @@
 #include <octomap_msgs/Octomap.h>
 #include <octomap_msgs/conversions.h>
 #include <octomap/octomap.h>
-#include <costmap_2d/footprint_layer.h>
 #include <boost/thread/mutex.hpp>
 
 
