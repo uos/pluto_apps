@@ -42,7 +42,7 @@ set(LINK_LIBS
 
 add_executable(${PROJECT_NAME} src/organized_point_normals.cpp)
 
-add_dependencies(${PROJECT_NAME} ${PROJEKT_NAME}_gencfg)
+add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
 target_link_libraries(${PROJECT_NAME} ${LINK_LIBS})
 
 
